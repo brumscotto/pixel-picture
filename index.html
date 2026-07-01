@@ -656,28 +656,49 @@ function buildPuzzle(source, lvl) {
 }
 
 // ---------------- rendering ----------------
+// The board canvas is sized to the frame (at device-pixel resolution) and the
+// picture is drawn through a transform each frame, so border lines and numbers
+// stay crisp at any zoom level.
 
-const borderCanvas = document.createElement("canvas");
+let borderPath = null;
+let dpr = 1;
+let rafPending = false;
 
-function sizeCanvas() {
-  const CS = Math.max(3, Math.floor(2400 / puzzle.w));
-  board.width = puzzle.w * CS;
-  board.height = puzzle.h * CS;
-  puzzle.CS = CS;
-  buildBorderLayer();
-  applyView();
+function minScale() {
+  const fw = frame.clientWidth, fh = frame.clientHeight;
+  return Math.min(1, (fh * puzzle.w) / (fw * puzzle.h));
 }
 
-function buildBorderLayer() {
-  const { w, h, region, CS } = puzzle;
-  borderCanvas.width = board.width;
-  borderCanvas.height = board.height;
-  const ctx = borderCanvas.getContext("2d");
-  ctx.strokeStyle = "#443C5C";
-  ctx.lineWidth = Math.max(1.4, CS * 0.5);
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.beginPath();
+function clampView(v) {
+  const fw = frame.clientWidth, fh = frame.clientHeight;
+  const s = Math.min(12, Math.max(minScale(), v.scale));
+  const cw = fw * s, ch = cw * puzzle.h / puzzle.w;
+  return {
+    scale: s,
+    tx: cw <= fw ? (fw - cw) / 2 : Math.min(0, Math.max(fw - cw, v.tx)),
+    ty: ch <= fh ? (fh - ch) / 2 : Math.min(0, Math.max(fh - ch, v.ty)),
+  };
+}
+
+function sizeCanvas() {
+  buildBorderPath();
+  layoutCanvas(true);
+}
+
+function layoutCanvas(resetView) {
+  dpr = window.devicePixelRatio || 1;
+  const fw = frame.clientWidth, fh = frame.clientHeight;
+  board.width = Math.max(1, Math.round(fw * dpr));
+  board.height = Math.max(1, Math.round(fh * dpr));
+  board.style.width = fw + "px";
+  board.style.height = fh + "px";
+  view = clampView(resetView ? { scale: minScale(), tx: 0, ty: 0 } : view);
+  requestRender();
+}
+
+function buildBorderPath() {
+  const { w, h, region } = puzzle;
+  borderPath = new Path2D();
   // vertical edges, merged into runs per column boundary
   for (let x = 1; x < w; x++) {
     let runStart = -1;
@@ -685,8 +706,8 @@ function buildBorderLayer() {
       const edge = y < h && region[y*w + x - 1] !== region[y*w + x];
       if (edge && runStart === -1) runStart = y;
       if (!edge && runStart !== -1) {
-        ctx.moveTo(x * CS, runStart * CS);
-        ctx.lineTo(x * CS, y * CS);
+        borderPath.moveTo(x, runStart);
+        borderPath.lineTo(x, y);
         runStart = -1;
       }
     }
@@ -698,35 +719,16 @@ function buildBorderLayer() {
       const edge = x < w && region[(y-1)*w + x] !== region[y*w + x];
       if (edge && runStart === -1) runStart = x;
       if (!edge && runStart !== -1) {
-        ctx.moveTo(runStart * CS, y * CS);
-        ctx.lineTo(x * CS, y * CS);
+        borderPath.moveTo(runStart, y);
+        borderPath.lineTo(x, y);
         runStart = -1;
       }
     }
   }
-  ctx.stroke();
 }
 
-function applyView() {
-  const fw = frame.clientWidth;
-  board.style.width = (fw * view.scale) + "px";
-  board.style.height = (fw * view.scale * puzzle.h / puzzle.w) + "px";
-  board.style.transform = "translate(" + view.tx + "px," + view.ty + "px)";
-}
-
-function clampView(v) {
-  const fw = frame.clientWidth, fh = frame.clientHeight;
-  const cw = fw * v.scale;
-  const ch = cw * puzzle.h / puzzle.w;
-  return {
-    scale: v.scale,
-    tx: Math.min(0, Math.max(fw - cw, v.tx)),
-    ty: ch <= fh ? Math.max(0, Math.min(fh - ch, v.ty)) : Math.min(0, Math.max(fh - ch, v.ty)),
-  };
-}
-
-function redraw() {
-  const { w, h, region, regions, palette, CS } = puzzle;
+function updateBase() {
+  const { w, h, region, regions, palette } = puzzle;
   baseCanvas.width = w; baseCanvas.height = h;
   const bctx = baseCanvas.getContext("2d");
   const img = bctx.createImageData(w, h);
@@ -739,25 +741,60 @@ function redraw() {
     d[i*4] = cr; d[i*4+1] = cg; d[i*4+2] = cb; d[i*4+3] = 255;
   }
   bctx.putImageData(img, 0, 0);
+}
 
+function requestRender() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => { rafPending = false; render(); });
+}
+
+function render() {
+  if (!puzzle) return;
+  const fw = frame.clientWidth, fh = frame.clientHeight;
+  const cell = fw * view.scale / puzzle.w; // CSS px per grid cell
   const ctx = board.getContext("2d");
-  ctx.imageSmoothingEnabled = false;
-  ctx.clearRect(0, 0, board.width, board.height);
-  ctx.drawImage(baseCanvas, 0, 0, board.width, board.height);
-  ctx.drawImage(borderCanvas, 0, 0);
 
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, board.width, board.height);
+
+  // fills (nearest-neighbor, cells are the pixels)
+  ctx.setTransform(cell * dpr, 0, 0, cell * dpr, view.tx * dpr, view.ty * dpr);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(baseCanvas, 0, 0);
+
+  // borders as vector strokes: crisp at any zoom
+  const lwCss = Math.min(Math.max(1.2, cell * 0.28), 4.5);
+  ctx.strokeStyle = "#443C5C";
+  ctx.lineWidth = lwCss / cell;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.stroke(borderPath);
+
+  // numbers drawn at native screen resolution
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (!peek) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#9a92ad";
+    ctx.fillStyle = "#8d84a3";
+    const regions = puzzle.regions;
     for (let r = 0; r < regions.length; r++) {
       if (fills[r] >= 0) continue;
       const reg = regions[r];
-      const size = Math.max(Math.min(reg.nd * CS * 1.15, CS * 7), CS * 1.4);
+      const sx = (reg.nx + 0.5) * cell + view.tx;
+      const sy = (reg.ny + 0.5) * cell + view.ty;
+      if (sx < -50 || sy < -50 || sx > fw + 50 || sy > fh + 50) continue;
+      const size = Math.max(Math.min(reg.nd * cell * 1.15, cell * 7), cell * 1.4);
+      if (size < 5) continue; // too small to read: zoom in to reveal
       ctx.font = "800 " + size + "px 'Baloo 2', sans-serif";
-      ctx.fillText(String(reg.color + 1), (reg.nx + 0.5) * CS, (reg.ny + 0.5) * CS);
+      ctx.fillText(String(reg.color + 1), sx, sy);
     }
   }
+}
+
+function redraw() {
+  updateBase();
+  requestRender();
 }
 
 // ---------------- palette pots ----------------
@@ -813,9 +850,10 @@ function updateProgress() {
 
 function paintAt(clientX, clientY) {
   if (done) return;
-  const rect = board.getBoundingClientRect();
-  const gx = Math.floor((clientX - rect.left) / rect.width * puzzle.w);
-  const gy = Math.floor((clientY - rect.top) / rect.height * puzzle.h);
+  const rect = frame.getBoundingClientRect();
+  const cell = frame.clientWidth * view.scale / puzzle.w;
+  const gx = Math.floor((clientX - rect.left - view.tx) / cell);
+  const gy = Math.floor((clientY - rect.top - view.ty) / cell);
   if (gx < 0 || gy < 0 || gx >= puzzle.w || gy >= puzzle.h) return;
   const rid = puzzle.region[gy * puzzle.w + gx];
   const reg = puzzle.regions[rid];
@@ -881,17 +919,17 @@ frame.addEventListener("pointermove", (e) => {
     const pts = [...pointers.values()];
     const dNow = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
     const rect = frame.getBoundingClientRect();
-    const newScale = Math.min(12, Math.max(1, gesture.startScale * dNow / gesture.startDist));
+    const newScale = gesture.startScale * dNow / gesture.startDist;
     const fx = gesture.midX - rect.left, fy = gesture.midY - rect.top;
-    const k = newScale / gesture.startScale;
+    const k = Math.min(12, Math.max(minScale(), newScale)) / gesture.startScale;
     view = clampView({ scale: newScale, tx: fx - k * (fx - gesture.startTx), ty: fy - k * (fy - gesture.startTy) });
-    applyView();
+    requestRender();
   } else if (pointers.size === 1) {
     const dx = e.clientX - gesture.startX, dy = e.clientY - gesture.startY;
     if (gesture.type === "maybe-tap" && Math.hypot(dx, dy) > 10) gesture.type = "pan";
     if (gesture.type === "pan") {
       view = clampView({ scale: view.scale, tx: gesture.startTx + dx, ty: gesture.startTy + dy });
-      applyView();
+      requestRender();
     }
   }
 });
@@ -932,9 +970,22 @@ peekBtn.addEventListener("pointerup", () => setPeek(false));
 peekBtn.addEventListener("pointerleave", () => setPeek(false));
 
 $("save-btn").onclick = () => {
+  const CS = Math.max(2, Math.floor(2000 / puzzle.w));
+  const ex = document.createElement("canvas");
+  ex.width = puzzle.w * CS;
+  ex.height = puzzle.h * CS;
+  const ctx = ex.getContext("2d");
+  ctx.setTransform(CS, 0, 0, CS, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(baseCanvas, 0, 0);
+  ctx.strokeStyle = "#443C5C";
+  ctx.lineWidth = 0.3;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.stroke(borderPath);
   const a = document.createElement("a");
   a.download = "my-painting.png";
-  a.href = board.toDataURL("image/png");
+  a.href = ex.toDataURL("image/png");
   a.click();
 };
 
@@ -942,8 +993,7 @@ checkSave();
 
 window.addEventListener("resize", () => {
   if (puzzle && !playScreen.classList.contains("hidden")) {
-    view = clampView(view);
-    applyView();
+    layoutCanvas(false);
   }
 });
 </script>

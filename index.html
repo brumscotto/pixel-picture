@@ -1,0 +1,951 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Paint by Number Maker</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Nunito:wght@600;800&display=swap" />
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: #FFF7EC;
+    font-family: 'Nunito', system-ui, sans-serif;
+    color: #443C5C;
+    user-select: none; -webkit-user-select: none;
+  }
+  .screen { height: 100%; display: flex; flex-direction: column; }
+  #start-screen { overflow-y: auto; }
+  .center { align-items: center; justify-content: center; padding: 24px; gap: 18px; text-align: center; }
+  h1 {
+    font-family: 'Baloo 2', sans-serif; font-weight: 800;
+    font-size: clamp(34px, 9vw, 52px); margin: 0; line-height: 1.05;
+  }
+  .tag { margin: 0; font-weight: 600; font-size: 17px; max-width: 320px; }
+  .big-btn {
+    font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 22px;
+    color: #443C5C; border: 3px solid #443C5C; border-radius: 22px;
+    padding: 16px 28px; box-shadow: 4px 5px 0 #443C5C; cursor: pointer;
+    width: 100%; max-width: 340px;
+  }
+  .big-btn:active { transform: translate(2px,3px); box-shadow: 1px 2px 0 #443C5C; }
+  .levels { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 6px; }
+  .level {
+    font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 15px;
+    padding: 10px 14px; border-radius: 16px; border: 3px solid #443C5C;
+    background: #fff; cursor: pointer; color: #443C5C;
+  }
+  .level.sel { background: #FFD93C; box-shadow: 3px 4px 0 #443C5C; }
+  .level .emoji { font-size: 22px; }
+  .level .desc { font-size: 11px; font-weight: 600; opacity: .75; }
+  .busy { font-family: 'Baloo 2', sans-serif; font-size: 22px; font-weight: 700; margin-top: 10px; }
+  .busy .brush { display: inline-block; animation: spin 1s linear infinite; }
+
+  /* play screen */
+  .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; flex-shrink: 0; }
+  .small-btn {
+    border: 3px solid #443C5C; background: #fff; border-radius: 14px;
+    font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 15px;
+    padding: 6px 12px; cursor: pointer; color: #443C5C;
+  }
+  .peek-btn { font-size: 18px; padding: 4px 10px; }
+  .peek-btn.on { background: #FFD93C; }
+  .progress-track {
+    flex: 1; height: 18px; border: 3px solid #443C5C; border-radius: 12px;
+    background: #fff; overflow: hidden;
+  }
+  .progress-fill {
+    width: 0%; height: 100%;
+    background: linear-gradient(90deg,#FF7A59,#FFD93C,#6BCB77,#57A0FF);
+    transition: width .3s;
+  }
+  .frame {
+    flex: 1 1 auto; min-height: 0; margin: 0 12px; border: 3px solid #443C5C; border-radius: 18px;
+    background: #fff; overflow: hidden; position: relative; touch-action: none;
+  }
+  .frame.shake { animation: wiggle .35s; }
+  #board { display: block; transform-origin: 0 0; }
+  .hint {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    background: #443C5C; color: #fff; border-radius: 14px; padding: 8px 16px;
+    font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 16px;
+    display: flex; align-items: center; gap: 8px; white-space: nowrap;
+  }
+  .hint .dot {
+    width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px; color: #fff; text-shadow: 0 0 3px #000;
+  }
+  .done-overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
+    background: rgba(255,247,236,.85);
+  }
+  .done-overlay .party { font-size: 60px; animation: pop .5s; }
+  .done-overlay .title { font-family: 'Baloo 2', sans-serif; font-size: 34px; font-weight: 800; }
+  .pots {
+    display: flex; gap: 12px; overflow-x: auto; flex-shrink: 0;
+    padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+    align-items: flex-end; -webkit-overflow-scrolling: touch;
+  }
+  .pot {
+    flex: 0 0 auto; width: 58px; height: 58px; border-radius: 50% 50% 46% 46%;
+    border: 3px solid #443C5C; box-shadow: 0 2px 0 #443C5C;
+    font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 22px;
+    cursor: pointer; transition: transform .15s, box-shadow .15s;
+  }
+  .pot.sel { transform: translateY(-10px) scale(1.08); box-shadow: 0 6px 0 #443C5C; }
+  .pot.done { opacity: .45; }
+  .pot.bounce { animation: bounce .45s ease 2; }
+  .hidden { display: none !important; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes wiggle { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+  @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-14px)} }
+  @keyframes pop { 0%{transform:scale(0)} 70%{transform:scale(1.3)} 100%{transform:scale(1)} }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+
+<!-- START SCREEN -->
+<div id="start-screen" class="screen center">
+  <div style="font-size:54px; line-height:1;">🎨</div>
+  <h1>Paint by<br />Number Maker</h1>
+  <p class="tag">Turn any photo into a coloring puzzle!</p>
+  <div class="levels" id="levels"></div>
+  <button class="big-btn hidden" id="continue-btn" style="background:#FF9F68; display:flex; align-items:center; justify-content:center; gap:10px;">
+    <img id="continue-thumb" alt="" style="display:none; width:38px; height:38px; object-fit:cover; border-radius:10px; border:2px solid #443C5C;" />
+    <span id="continue-label">▶️ Keep painting</span>
+  </button>
+  <button class="big-btn hidden" id="reuse-btn" style="background:#FF8FB1;">🔁 Same photo, new level</button>
+  <button class="big-btn" id="pick-btn" style="background:#57A0FF;">📷 Pick a photo</button>
+  <button class="big-btn" id="sample-btn" style="background:#6BCB77;">✨ Try a sample picture</button>
+  <div class="busy hidden" id="busy"><span class="brush">🖌️</span>&nbsp;Mixing your paints…</div>
+  <input type="file" id="file-input" accept="image/*" style="display:none;" />
+</div>
+
+<!-- PLAY SCREEN -->
+<div id="play-screen" class="screen hidden">
+  <div class="topbar">
+    <button class="small-btn" id="new-btn">← New</button>
+    <div class="progress-track"><div class="progress-fill" id="progress"></div></div>
+    <button class="small-btn peek-btn" id="peek-btn" aria-label="Hold to peek at the finished picture">👀</button>
+  </div>
+  <div class="frame" id="frame">
+    <canvas id="board"></canvas>
+    <div class="hint hidden" id="hint">Try color <span class="dot" id="hint-dot"></span></div>
+    <div class="done-overlay hidden" id="done">
+      <div class="party">🎉</div>
+      <div class="title">You did it!</div>
+      <button class="big-btn" id="save-btn" style="background:#FFD93C; max-width:240px; font-size:18px; padding:12px 20px;">💾 Save my picture</button>
+      <button class="big-btn" id="again-btn" style="background:#57A0FF; max-width:240px; font-size:18px; padding:12px 20px;">🎨 Paint another one</button>
+    </div>
+  </div>
+  <div class="pots" id="pots"></div>
+</div>
+
+<script>
+"use strict";
+
+// ---------------- image processing ----------------
+
+function boxBlur(data, w, h, passes) {
+  const tmp = new Float32Array(data.length);
+  let src = Float32Array.from(data);
+  for (let p = 0; p < passes; p++) {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          const yy = y + dy; if (yy < 0 || yy >= h) continue;
+          for (let dx = -1; dx <= 1; dx++) {
+            const xx = x + dx; if (xx < 0 || xx >= w) continue;
+            const i = (yy * w + xx) * 3;
+            r += src[i]; g += src[i + 1]; b += src[i + 2]; n++;
+          }
+        }
+        const o = (y * w + x) * 3;
+        tmp[o] = r / n; tmp[o + 1] = g / n; tmp[o + 2] = b / n;
+      }
+    }
+    src.set(tmp);
+  }
+  return src;
+}
+
+function kmeans(pixels, count, K) {
+  const cents = [];
+  const step = Math.max(1, Math.floor(count / (K * 7)));
+  const samples = [];
+  for (let i = 0; i < count; i += step) {
+    samples.push([pixels[i * 3], pixels[i * 3 + 1], pixels[i * 3 + 2]]);
+  }
+  cents.push(samples[Math.floor(samples.length / 2)]);
+  while (cents.length < K) {
+    let best = null, bestD = -1;
+    for (let s = 0; s < samples.length; s += 3) {
+      const p = samples[s];
+      let dMin = Infinity;
+      for (const c of cents) {
+        const d = (p[0]-c[0])**2 + (p[1]-c[1])**2 + (p[2]-c[2])**2;
+        if (d < dMin) dMin = d;
+      }
+      if (dMin > bestD) { bestD = dMin; best = p; }
+    }
+    cents.push(best.slice());
+  }
+  const labels = new Int16Array(count);
+  const iterStride = Math.max(1, Math.ceil(count / 80000));
+  for (let iter = 0; iter < 8; iter++) {
+    const sums = cents.map(() => [0, 0, 0, 0]);
+    for (let i = 0; i < count; i += iterStride) {
+      const r = pixels[i*3], g = pixels[i*3+1], b = pixels[i*3+2];
+      let bi = 0, bd = Infinity;
+      for (let k = 0; k < cents.length; k++) {
+        const c = cents[k];
+        const d = (r-c[0])**2 + (g-c[1])**2 + (b-c[2])**2;
+        if (d < bd) { bd = d; bi = k; }
+      }
+      labels[i] = bi;
+      const s = sums[bi];
+      s[0] += r; s[1] += g; s[2] += b; s[3]++;
+    }
+    for (let k = 0; k < cents.length; k++) {
+      if (sums[k][3] > 0) cents[k] = [sums[k][0]/sums[k][3], sums[k][1]/sums[k][3], sums[k][2]/sums[k][3]];
+    }
+  }
+  // final full-resolution assignment
+  for (let i = 0; i < count; i++) {
+    const r = pixels[i*3], g = pixels[i*3+1], b = pixels[i*3+2];
+    let bi = 0, bd = Infinity;
+    for (let k = 0; k < cents.length; k++) {
+      const c = cents[k];
+      const d = (r-c[0])**2 + (g-c[1])**2 + (b-c[2])**2;
+      if (d < bd) { bd = d; bi = k; }
+    }
+    labels[i] = bi;
+  }
+  // merge near-identical colors so no two pots look the same
+  const map = cents.map((_, i) => i);
+  for (let a = 0; a < cents.length; a++) {
+    for (let b = a + 1; b < cents.length; b++) {
+      if (map[b] !== b) continue;
+      const d = Math.sqrt((cents[a][0]-cents[b][0])**2 + (cents[a][1]-cents[b][1])**2 + (cents[a][2]-cents[b][2])**2);
+      if (d < 22) map[b] = map[a];
+    }
+  }
+  const palette = [];
+  const finalIdx = new Array(cents.length);
+  for (let k = 0; k < cents.length; k++) {
+    if (map[k] === k) { finalIdx[k] = palette.length; palette.push(cents[k].map(Math.round)); }
+  }
+  for (let k = 0; k < cents.length; k++) {
+    if (map[k] !== k) finalIdx[k] = finalIdx[map[k]];
+  }
+  for (let i = 0; i < count; i++) labels[i] = finalIdx[labels[i]];
+  return { labels, palette };
+}
+
+function modeFilter(labels, w, h, passes) {
+  let src = Int16Array.from(labels);
+  const out = new Int16Array(labels.length);
+  for (let p = 0; p < passes; p++) {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const counts = {};
+        let bestL = src[y*w+x], bestC = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          const yy = y + dy; if (yy < 0 || yy >= h) continue;
+          for (let dx = -1; dx <= 1; dx++) {
+            const xx = x + dx; if (xx < 0 || xx >= w) continue;
+            const l = src[yy*w+xx];
+            counts[l] = (counts[l] || 0) + 1;
+            if (counts[l] > bestC) { bestC = counts[l]; bestL = l; }
+          }
+        }
+        out[y*w+x] = bestL;
+      }
+    }
+    src.set(out);
+  }
+  return src;
+}
+
+function connectedComponents(labels, w, h) {
+  const region = new Int32Array(labels.length).fill(-1);
+  const stack = new Int32Array(labels.length);
+  let rid = 0;
+  const sizes = [], colors = [];
+  for (let i = 0; i < labels.length; i++) {
+    if (region[i] !== -1) continue;
+    let sp = 0;
+    stack[sp++] = i;
+    region[i] = rid;
+    let size = 0;
+    const lab = labels[i];
+    while (sp > 0) {
+      const c = stack[--sp];
+      size++;
+      const cx = c % w, cy = (c / w) | 0;
+      if (cx > 0     && region[c-1] === -1 && labels[c-1] === lab) { region[c-1] = rid; stack[sp++] = c-1; }
+      if (cx < w - 1 && region[c+1] === -1 && labels[c+1] === lab) { region[c+1] = rid; stack[sp++] = c+1; }
+      if (cy > 0     && region[c-w] === -1 && labels[c-w] === lab) { region[c-w] = rid; stack[sp++] = c-w; }
+      if (cy < h - 1 && region[c+w] === -1 && labels[c+w] === lab) { region[c+w] = rid; stack[sp++] = c+w; }
+    }
+    sizes.push(size);
+    colors.push(lab);
+    rid++;
+  }
+  return { region, sizes, colors, count: rid };
+}
+
+function absorbSmallRegions(labels, w, h, minSize, passes) {
+  let lab = Int16Array.from(labels);
+  for (let p = 0; p < passes; p++) {
+    const { region, sizes } = connectedComponents(lab, w, h);
+    // group cells by region in one pass so this stays fast
+    const cellsByRegion = new Map();
+    for (let i = 0; i < lab.length; i++) {
+      if (sizes[region[i]] < minSize) {
+        if (!cellsByRegion.has(region[i])) cellsByRegion.set(region[i], []);
+        cellsByRegion.get(region[i]).push(i);
+      }
+    }
+    if (cellsByRegion.size === 0) break;
+    cellsByRegion.forEach((cells, rid) => {
+      const counts = new Map();
+      for (const i of cells) {
+        const x = i % w, y = (i / w) | 0;
+        const nb = [];
+        if (x > 0) nb.push(i-1);
+        if (x < w-1) nb.push(i+1);
+        if (y > 0) nb.push(i-w);
+        if (y < h-1) nb.push(i+w);
+        for (const n of nb) {
+          if (region[n] !== rid) counts.set(lab[n], (counts.get(lab[n]) || 0) + 1);
+        }
+      }
+      let bestL = -1, bestC = -1;
+      counts.forEach((c, l) => { if (c > bestC) { bestC = c; bestL = l; } });
+      if (bestL >= 0) for (const i of cells) lab[i] = bestL;
+    });
+  }
+  return lab;
+}
+
+function distanceTransform(region, w, h) {
+  const dist = new Int16Array(region.length).fill(-1);
+  const queue = new Int32Array(region.length);
+  let qh = 0, qt = 0;
+  for (let i = 0; i < region.length; i++) {
+    const x = i % w, y = (i / w) | 0;
+    const edge = x === 0 || y === 0 || x === w-1 || y === h-1 ||
+      region[i-1] !== region[i] || region[i+1] !== region[i] ||
+      region[i-w] !== region[i] || region[i+w] !== region[i];
+    if (edge) { dist[i] = 1; queue[qt++] = i; }
+  }
+  while (qh < qt) {
+    const c = queue[qh++];
+    const d = dist[c];
+    const x = c % w, y = (c / w) | 0;
+    if (x > 0     && dist[c-1] === -1 && region[c-1] === region[c]) { dist[c-1] = d+1; queue[qt++] = c-1; }
+    if (x < w - 1 && dist[c+1] === -1 && region[c+1] === region[c]) { dist[c+1] = d+1; queue[qt++] = c+1; }
+    if (y > 0     && dist[c-w] === -1 && region[c-w] === region[c]) { dist[c-w] = d+1; queue[qt++] = c-w; }
+    if (y < h - 1 && dist[c+w] === -1 && region[c+w] === region[c]) { dist[c+w] = d+1; queue[qt++] = c+w; }
+  }
+  return dist;
+}
+
+// ---------------- save & resume ----------------
+
+const SAVE_KEY = "pbn-save-v1";
+const IMG_KEY = "pbn-image-v1";
+let savedData = null;
+let lastImage = null;
+let saveTimer = null;
+
+// downscaled copy for storage: the puzzle never uses more than ~700px anyway
+function snapshotSource(source) {
+  const sc = Math.min(1, 720 / Math.max(source.width, source.height));
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(source.width * sc));
+  c.height = Math.max(1, Math.round(source.height * sc));
+  c.getContext("2d").drawImage(source, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.82);
+}
+
+// Uses the artifact storage API when available (Claude preview),
+// falls back to localStorage when opened as a plain file.
+const store = {
+  async get(k) {
+    if (window.storage) { try { const r = await window.storage.get(k); return r ? r.value : null; } catch (e) { return null; } }
+    try { return localStorage.getItem(k); } catch (e) { return null; }
+  },
+  async set(k, v) {
+    if (window.storage) { try { await window.storage.set(k, v); return; } catch (e) {} }
+    try { localStorage.setItem(k, v); } catch (e) {}
+  },
+  async del(k) {
+    if (window.storage) { try { await window.storage.delete(k); return; } catch (e) {} }
+    try { localStorage.removeItem(k); } catch (e) {}
+  },
+};
+
+function rleEncode(arr) {
+  const out = [];
+  let v = arr[0], n = 1;
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] === v) n++;
+    else { out.push(v, n); v = arr[i]; n = 1; }
+  }
+  out.push(v, n);
+  return out;
+}
+
+function rleDecode(pairs, len) {
+  const out = new Int32Array(len);
+  let p = 0;
+  for (let i = 0; i < pairs.length; i += 2) {
+    out.fill(pairs[i], p, p + pairs[i + 1]);
+    p += pairs[i + 1];
+  }
+  return out;
+}
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveState, 600);
+}
+
+function saveState() {
+  if (!puzzle || done) return;
+  const data = {
+    v: 1,
+    levelId: level.id,
+    w: puzzle.w, h: puzzle.h,
+    rle: rleEncode(puzzle.region),
+    regions: puzzle.regions.map((r) => [r.color, r.size, r.nx, r.ny, r.nd]),
+    palette: puzzle.palette,
+    fills: Array.from(fills),
+  };
+  store.set(SAVE_KEY, JSON.stringify(data));
+}
+
+async function checkSave() {
+  const btn = document.getElementById("continue-btn");
+  const reuse = document.getElementById("reuse-btn");
+  const thumb = document.getElementById("continue-thumb");
+  btn.classList.add("hidden");
+  reuse.classList.add("hidden");
+  savedData = null;
+
+  lastImage = await store.get(IMG_KEY);
+  if (lastImage) reuse.classList.remove("hidden");
+
+  const raw = await store.get(SAVE_KEY);
+  if (raw) {
+    try {
+      const d = JSON.parse(raw);
+      if (d && d.v === 1 && d.rle && d.regions) {
+        savedData = d;
+        let painted = 0;
+        d.regions.forEach((r, i) => { if (d.fills[i] >= 0) painted += r[1]; });
+        const pct = Math.round(100 * painted / (d.w * d.h));
+        document.getElementById("continue-label").textContent = "▶️ Keep painting (" + pct + "%)";
+        if (lastImage) { thumb.src = lastImage; thumb.style.display = "block"; }
+        else { thumb.style.display = "none"; }
+        btn.classList.remove("hidden");
+      }
+    } catch (e) { /* corrupt save: ignore */ }
+  }
+}
+
+function resumeSave() {
+  const d = savedData;
+  if (!d) return;
+  level = LEVELS.find((l) => l.id === d.levelId) || level;
+  puzzle = {
+    w: d.w, h: d.h,
+    region: rleDecode(d.rle, d.w * d.h),
+    regions: d.regions.map((a) => ({ color: a[0], size: a[1], nx: a[2], ny: a[3], nd: a[4] })),
+    palette: d.palette,
+    cellsTotal: d.w * d.h,
+  };
+  fills = Int16Array.from(d.fills);
+  done = false; peek = false;
+  view = { scale: 1, tx: 0, ty: 0 };
+  selected = 0;
+  for (let ci = 0; ci < puzzle.palette.length; ci++) {
+    if (puzzle.regions.some((r, ri) => r.color === ci && fills[ri] < 0)) { selected = ci; break; }
+  }
+  buildPots();
+  updateProgress();
+  document.getElementById("done").classList.add("hidden");
+  document.getElementById("start-screen").classList.add("hidden");
+  document.getElementById("play-screen").classList.remove("hidden");
+  sizeCanvas();
+  redraw();
+  refreshPots();
+}
+
+// ---------------- app state ----------------
+
+const LEVELS = [
+  { id: "easy",   label: "Easy",   emoji: "🐣", colors: 12, maxDim: 320, blur: 2, modePasses: 2, minRegion: 70, desc: "12 colors" },
+  { id: "medium", label: "Medium", emoji: "🦊", colors: 18, maxDim: 460, blur: 1, modePasses: 1, minRegion: 40, desc: "18 colors" },
+  { id: "tricky", label: "Tricky", emoji: "🦉", colors: 24, maxDim: 580, blur: 1, modePasses: 1, minRegion: 26, desc: "24 colors" },
+  { id: "expert", label: "Expert", emoji: "🐉", colors: 32, maxDim: 680, blur: 0, modePasses: 1, minRegion: 16, desc: "32 colors, whoa" },
+];
+
+let level = LEVELS[0];
+let puzzle = null;        // { w, h, region, regions, palette, cellsTotal }
+let fills = null;         // Int16Array: region -> palette index or -1
+let selected = 0;
+let peek = false;
+let done = false;
+let view = { scale: 1, tx: 0, ty: 0 };
+let hintTimer = null;
+
+const $ = (id) => document.getElementById(id);
+const startScreen = $("start-screen"), playScreen = $("play-screen");
+const board = $("board"), frame = $("frame");
+const baseCanvas = document.createElement("canvas");
+
+// ---------------- start screen ----------------
+
+const levelsEl = $("levels");
+LEVELS.forEach((l) => {
+  const b = document.createElement("button");
+  b.className = "level" + (l === level ? " sel" : "");
+  b.innerHTML = '<div class="emoji">' + l.emoji + '</div>' + l.label + '<div class="desc">' + l.desc + '</div>';
+  b.onclick = () => {
+    level = l;
+    levelsEl.querySelectorAll(".level").forEach((x) => x.classList.remove("sel"));
+    b.classList.add("sel");
+  };
+  levelsEl.appendChild(b);
+});
+
+$("pick-btn").onclick = () => $("file-input").click();
+$("continue-btn").onclick = resumeSave;
+$("reuse-btn").onclick = () => {
+  if (!lastImage) return;
+  const im = new Image();
+  im.onload = () => startPuzzle(im);
+  im.src = lastImage;
+};
+
+$("file-input").onchange = async (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    let bmp;
+    try {
+      bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch (err) {
+      bmp = await new Promise((res, rej) => {
+        const img = new Image();
+        img.onload = () => res(img);
+        img.onerror = rej;
+        img.src = URL.createObjectURL(file);
+      });
+    }
+    startPuzzle(bmp);
+  } catch (err) {
+    alert("That photo didn't work. Try a different one!");
+  }
+};
+
+function drawSample() {
+  const c = document.createElement("canvas");
+  c.width = 320; c.height = 240;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#7ec8ff"; ctx.fillRect(0, 0, 320, 240);
+  ctx.fillStyle = "#ffd93c"; ctx.beginPath(); ctx.arc(262, 46, 34, 0, 7); ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  [[70,45],[95,40],[120,48],[95,55]].forEach(([cx,cy]) => { ctx.beginPath(); ctx.arc(cx, cy, 18, 0, 7); ctx.fill(); });
+  ctx.fillStyle = "#7ed07e"; ctx.fillRect(0, 165, 320, 75);
+  ctx.fillStyle = "#e2543e"; ctx.fillRect(50, 110, 100, 75);
+  ctx.fillStyle = "#8a4b2d"; ctx.beginPath(); ctx.moveTo(38,112); ctx.lineTo(100,62); ctx.lineTo(162,112); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#ffd93c"; ctx.fillRect(66, 128, 26, 26);
+  ctx.fillStyle = "#5a3d2b"; ctx.fillRect(112, 138, 24, 47);
+  ctx.fillStyle = "#8a4b2d"; ctx.fillRect(228, 128, 18, 57);
+  ctx.fillStyle = "#3f9c52"; ctx.beginPath(); ctx.arc(237, 105, 34, 0, 7); ctx.fill();
+  return c;
+}
+
+$("sample-btn").onclick = () => startPuzzle(drawSample());
+
+// ---------------- puzzle build ----------------
+
+function startPuzzle(source) {
+  $("busy").classList.remove("hidden");
+  $("pick-btn").classList.add("hidden");
+  $("sample-btn").classList.add("hidden");
+  setTimeout(() => {
+    try {
+      try {
+        lastImage = snapshotSource(source);
+        store.set(IMG_KEY, lastImage);
+      } catch (e) { /* snapshot failed: puzzle still works */ }
+      puzzle = buildPuzzle(source, level);
+      fills = new Int16Array(puzzle.regions.length).fill(-1);
+      selected = 0; peek = false; done = false;
+      view = { scale: 1, tx: 0, ty: 0 };
+      buildPots();
+      updateProgress();
+      $("done").classList.add("hidden");
+      startScreen.classList.add("hidden");
+      playScreen.classList.remove("hidden");
+      sizeCanvas();
+      redraw();
+      saveState();
+    } catch (err) {
+      alert("Something went wrong making the puzzle: " + err.message);
+    } finally {
+      $("busy").classList.add("hidden");
+      $("pick-btn").classList.remove("hidden");
+      $("sample-btn").classList.remove("hidden");
+    }
+  }, 60);
+}
+
+function buildPuzzle(source, lvl) {
+  const sw = source.width, sh = source.height;
+  const scale = lvl.maxDim / Math.max(sw, sh);
+  const w = Math.max(24, Math.round(sw * scale));
+  const h = Math.max(24, Math.round(sh * scale));
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(source, 0, 0, w, h);
+  const img = ctx.getImageData(0, 0, w, h).data;
+  const px = new Float32Array(w * h * 3);
+  for (let i = 0; i < w * h; i++) {
+    px[i*3] = img[i*4]; px[i*3+1] = img[i*4+1]; px[i*3+2] = img[i*4+2];
+  }
+  const blurred = boxBlur(px, w, h, lvl.blur);
+  const km = kmeans(blurred, w * h, lvl.colors);
+  let lab = modeFilter(km.labels, w, h, lvl.modePasses);
+  lab = absorbSmallRegions(lab, w, h, lvl.minRegion, 4);
+  const cc = connectedComponents(lab, w, h);
+  const dist = distanceTransform(cc.region, w, h);
+  const regions = [];
+  for (let r = 0; r < cc.count; r++) {
+    regions.push({ color: cc.colors[r], size: cc.sizes[r], nx: 0, ny: 0, nd: 0 });
+  }
+  for (let i = 0; i < cc.region.length; i++) {
+    const r = cc.region[i];
+    if (dist[i] > regions[r].nd) {
+      regions[r].nd = dist[i];
+      regions[r].nx = i % w;
+      regions[r].ny = (i / w) | 0;
+    }
+  }
+  // drop unused palette colors, renumber
+  const used = new Set(regions.map((r) => r.color));
+  const remap = new Map();
+  const palette = [];
+  km.palette.forEach((col, i) => {
+    if (used.has(i)) { remap.set(i, palette.length); palette.push(col); }
+  });
+  regions.forEach((r) => { r.color = remap.get(r.color); });
+  return { w, h, region: cc.region, regions, palette, cellsTotal: w * h };
+}
+
+// ---------------- rendering ----------------
+
+const borderCanvas = document.createElement("canvas");
+
+function sizeCanvas() {
+  const CS = Math.max(3, Math.floor(2400 / puzzle.w));
+  board.width = puzzle.w * CS;
+  board.height = puzzle.h * CS;
+  puzzle.CS = CS;
+  buildBorderLayer();
+  applyView();
+}
+
+function buildBorderLayer() {
+  const { w, h, region, CS } = puzzle;
+  borderCanvas.width = board.width;
+  borderCanvas.height = board.height;
+  const ctx = borderCanvas.getContext("2d");
+  ctx.strokeStyle = "#443C5C";
+  ctx.lineWidth = Math.max(1.4, CS * 0.5);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  // vertical edges, merged into runs per column boundary
+  for (let x = 1; x < w; x++) {
+    let runStart = -1;
+    for (let y = 0; y <= h; y++) {
+      const edge = y < h && region[y*w + x - 1] !== region[y*w + x];
+      if (edge && runStart === -1) runStart = y;
+      if (!edge && runStart !== -1) {
+        ctx.moveTo(x * CS, runStart * CS);
+        ctx.lineTo(x * CS, y * CS);
+        runStart = -1;
+      }
+    }
+  }
+  // horizontal edges, merged into runs per row boundary
+  for (let y = 1; y < h; y++) {
+    let runStart = -1;
+    for (let x = 0; x <= w; x++) {
+      const edge = x < w && region[(y-1)*w + x] !== region[y*w + x];
+      if (edge && runStart === -1) runStart = x;
+      if (!edge && runStart !== -1) {
+        ctx.moveTo(runStart * CS, y * CS);
+        ctx.lineTo(x * CS, y * CS);
+        runStart = -1;
+      }
+    }
+  }
+  ctx.stroke();
+}
+
+function applyView() {
+  const fw = frame.clientWidth;
+  board.style.width = (fw * view.scale) + "px";
+  board.style.height = (fw * view.scale * puzzle.h / puzzle.w) + "px";
+  board.style.transform = "translate(" + view.tx + "px," + view.ty + "px)";
+}
+
+function clampView(v) {
+  const fw = frame.clientWidth, fh = frame.clientHeight;
+  const cw = fw * v.scale;
+  const ch = cw * puzzle.h / puzzle.w;
+  return {
+    scale: v.scale,
+    tx: Math.min(0, Math.max(fw - cw, v.tx)),
+    ty: ch <= fh ? Math.max(0, Math.min(fh - ch, v.ty)) : Math.min(0, Math.max(fh - ch, v.ty)),
+  };
+}
+
+function redraw() {
+  const { w, h, region, regions, palette, CS } = puzzle;
+  baseCanvas.width = w; baseCanvas.height = h;
+  const bctx = baseCanvas.getContext("2d");
+  const img = bctx.createImageData(w, h);
+  const d = img.data;
+  for (let i = 0; i < region.length; i++) {
+    const r = region[i];
+    const ci = peek ? regions[r].color : fills[r];
+    let cr = 255, cg = 252, cb = 246;
+    if (ci >= 0) { cr = palette[ci][0]; cg = palette[ci][1]; cb = palette[ci][2]; }
+    d[i*4] = cr; d[i*4+1] = cg; d[i*4+2] = cb; d[i*4+3] = 255;
+  }
+  bctx.putImageData(img, 0, 0);
+
+  const ctx = board.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, board.width, board.height);
+  ctx.drawImage(baseCanvas, 0, 0, board.width, board.height);
+  ctx.drawImage(borderCanvas, 0, 0);
+
+  if (!peek) {
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#9a92ad";
+    for (let r = 0; r < regions.length; r++) {
+      if (fills[r] >= 0) continue;
+      const reg = regions[r];
+      const size = Math.max(Math.min(reg.nd * CS * 1.15, CS * 7), CS * 1.4);
+      ctx.font = "800 " + size + "px 'Baloo 2', sans-serif";
+      ctx.fillText(String(reg.color + 1), (reg.nx + 0.5) * CS, (reg.ny + 0.5) * CS);
+    }
+  }
+}
+
+// ---------------- palette pots ----------------
+
+function buildPots() {
+  const pots = $("pots");
+  pots.innerHTML = "";
+  puzzle.palette.forEach((col, ci) => {
+    const b = document.createElement("button");
+    b.className = "pot" + (ci === selected ? " sel" : "");
+    b.id = "pot-" + ci;
+    b.style.background = "rgb(" + col.join(",") + ")";
+    const bright = (col[0]*299 + col[1]*587 + col[2]*114) / 1000 > 150;
+    b.style.color = bright ? "#443C5C" : "#fff";
+    b.textContent = ci + 1;
+    b.setAttribute("aria-label", "Color " + (ci + 1));
+    b.onclick = () => {
+      if (b.classList.contains("done")) return;
+      selected = ci;
+      pots.querySelectorAll(".pot").forEach((x) => x.classList.remove("sel"));
+      b.classList.add("sel");
+    };
+    pots.appendChild(b);
+  });
+}
+
+function refreshPots() {
+  puzzle.palette.forEach((_, ci) => {
+    const isDone = puzzle.regions.every((r, ri) => r.color !== ci || fills[ri] >= 0);
+    const b = $("pot-" + ci);
+    if (isDone && !b.classList.contains("done")) {
+      b.classList.add("done");
+      b.textContent = "✓";
+      if (ci === selected) {
+        // hop to the next unfinished color
+        for (let n = 0; n < puzzle.palette.length; n++) {
+          if (!$("pot-" + n).classList.contains("done")) { $("pot-" + n).click(); break; }
+        }
+      }
+    }
+  });
+}
+
+function updateProgress() {
+  let painted = 0;
+  for (let r = 0; r < puzzle.regions.length; r++) {
+    if (fills[r] >= 0) painted += puzzle.regions[r].size;
+  }
+  $("progress").style.width = Math.round(100 * painted / puzzle.cellsTotal) + "%";
+}
+
+// ---------------- painting + gestures ----------------
+
+function paintAt(clientX, clientY) {
+  if (done) return;
+  const rect = board.getBoundingClientRect();
+  const gx = Math.floor((clientX - rect.left) / rect.width * puzzle.w);
+  const gy = Math.floor((clientY - rect.top) / rect.height * puzzle.h);
+  if (gx < 0 || gy < 0 || gx >= puzzle.w || gy >= puzzle.h) return;
+  const rid = puzzle.region[gy * puzzle.w + gx];
+  const reg = puzzle.regions[rid];
+  if (fills[rid] >= 0) return;
+  if (reg.color === selected) {
+    fills[rid] = selected;
+    redraw();
+    updateProgress();
+    refreshPots();
+    if (navigator.vibrate) navigator.vibrate(10);
+    if (puzzle.regions.every((_, r) => fills[r] >= 0)) {
+      done = true;
+      clearTimeout(saveTimer);
+      store.del(SAVE_KEY);
+      $("done").classList.remove("hidden");
+    } else {
+      scheduleSave();
+    }
+  } else {
+    const hint = $("hint"), dot = $("hint-dot");
+    dot.style.background = "rgb(" + puzzle.palette[reg.color].join(",") + ")";
+    dot.textContent = reg.color + 1;
+    hint.classList.remove("hidden");
+    frame.classList.add("shake");
+    const pot = $("pot-" + reg.color);
+    pot.classList.add("bounce");
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => {
+      hint.classList.add("hidden");
+      frame.classList.remove("shake");
+      pot.classList.remove("bounce");
+    }, 900);
+    if (navigator.vibrate) navigator.vibrate([30, 40, 30]);
+  }
+}
+
+const pointers = new Map();
+let gesture = null;
+
+frame.addEventListener("pointerdown", (e) => {
+  if (e.target.closest(".done-overlay")) return;
+  frame.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 1) {
+    gesture = { type: "maybe-tap", startX: e.clientX, startY: e.clientY, startTx: view.tx, startTy: view.ty, t: Date.now() };
+  } else if (pointers.size === 2) {
+    const pts = [...pointers.values()];
+    gesture = {
+      type: "pinch",
+      startDist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y),
+      startScale: view.scale,
+      midX: (pts[0].x + pts[1].x) / 2,
+      midY: (pts[0].y + pts[1].y) / 2,
+      startTx: view.tx, startTy: view.ty,
+    };
+  }
+});
+
+frame.addEventListener("pointermove", (e) => {
+  if (!pointers.has(e.pointerId) || !gesture) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (gesture.type === "pinch" && pointers.size === 2) {
+    const pts = [...pointers.values()];
+    const dNow = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    const rect = frame.getBoundingClientRect();
+    const newScale = Math.min(12, Math.max(1, gesture.startScale * dNow / gesture.startDist));
+    const fx = gesture.midX - rect.left, fy = gesture.midY - rect.top;
+    const k = newScale / gesture.startScale;
+    view = clampView({ scale: newScale, tx: fx - k * (fx - gesture.startTx), ty: fy - k * (fy - gesture.startTy) });
+    applyView();
+  } else if (pointers.size === 1) {
+    const dx = e.clientX - gesture.startX, dy = e.clientY - gesture.startY;
+    if (gesture.type === "maybe-tap" && Math.hypot(dx, dy) > 10) gesture.type = "pan";
+    if (gesture.type === "pan") {
+      view = clampView({ scale: view.scale, tx: gesture.startTx + dx, ty: gesture.startTy + dy });
+      applyView();
+    }
+  }
+});
+
+function pointerEnd(e) {
+  const g = gesture;
+  pointers.delete(e.pointerId);
+  if (g && g.type === "maybe-tap" && pointers.size === 0 && Date.now() - g.t < 600) {
+    paintAt(e.clientX, e.clientY);
+  }
+  if (pointers.size === 0) gesture = null;
+  else if (pointers.size === 1) {
+    const p = [...pointers.values()][0];
+    gesture = { type: "pan", startX: p.x, startY: p.y, startTx: view.tx, startTy: view.ty, t: Date.now() };
+  }
+}
+frame.addEventListener("pointerup", pointerEnd);
+frame.addEventListener("pointercancel", pointerEnd);
+
+// ---------------- top bar ----------------
+
+$("new-btn").onclick = () => {
+  playScreen.classList.add("hidden");
+  startScreen.classList.remove("hidden");
+  checkSave();
+};
+$("again-btn").onclick = () => $("new-btn").onclick();
+
+const peekBtn = $("peek-btn");
+function setPeek(on) {
+  if (peek === on || !puzzle) return;
+  peek = on;
+  peekBtn.classList.toggle("on", on);
+  redraw();
+}
+peekBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); setPeek(true); });
+peekBtn.addEventListener("pointerup", () => setPeek(false));
+peekBtn.addEventListener("pointerleave", () => setPeek(false));
+
+$("save-btn").onclick = () => {
+  const a = document.createElement("a");
+  a.download = "my-painting.png";
+  a.href = board.toDataURL("image/png");
+  a.click();
+};
+
+checkSave();
+
+window.addEventListener("resize", () => {
+  if (puzzle && !playScreen.classList.contains("hidden")) {
+    view = clampView(view);
+    applyView();
+  }
+});
+</script>
+</body>
+</html>
